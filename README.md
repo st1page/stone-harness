@@ -1,4 +1,6 @@
-# sts-harness
+# stone-harness
+
+`stone-harness` 需要和 [`aticket-cli`](https://github.com/st1page/aticket-cli) 配合使用：本仓库提供 agent 控制面示例基座，`aticket-cli` 提供 ticket / workspace 生命周期命令。
 
 新项目的 agent 工作基座。仓库自包含，**唯一外部依赖是 [`aticket-cli`](https://github.com/st1page/aticket-cli) 的 `aticket-cli` 命令**（用于工作单元归属、claim/release、fork、archive、状态外部化等）。
 
