@@ -42,10 +42,11 @@ python3.12 "$PERF_RUN_GUARD" --help
 每个 guarded run 的输出必须落在当前 ticket 下，例如：
 
 ```bash
-RUN_ID="$(date +%Y%m%d-%H%M%S)-<short-name>"
+RUN_ID="$(date +%Y%m%d-%H%M%S-%N)-<short-name>"
 OUT="$TICKET_DIR/artifacts/experiments/$RUN_ID/perf_guard"
-mkdir -p "$OUT"
 ```
+
+不要预先创建或复用 `$OUT`。guard 会原子创建输出目录；如果目录已经存在，它必须拒绝运行，避免覆盖先前的 manifest、summary 或原始采样证据。
 
 不要把高频采样原始数据逐条写入 aticket work log。aticket 记录控制面摘要，`perf-run-guard` output dir 保存数据面证据。
 
@@ -82,6 +83,8 @@ python3.12 "$PERF_RUN_GUARD" run \
 ```
 
 如果 benchmark 本身很短，必须延长 benchmark 迭代或提高 guard 的最小样本要求；不能因为运行过快没有样本，就把结果当作 clean。
+
+`--min-samples` 必须是大于等于 1 的整数。当前实现支持无 SMT 或每个 core 只有一个 sibling 的拓扑；如果目标 CPU 暴露多个 sibling，guard 会 fail closed，不会忽略其中任何一个后继续给出 clean 结论。
 
 ## 解释结果
 

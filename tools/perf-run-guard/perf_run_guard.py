@@ -87,6 +87,16 @@ def parse_cpu_list(value: str) -> set[int]:
     return cpus
 
 
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got: {value}") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(f"expected an integer >= 1, got: {value}")
+    return parsed
+
+
 def format_cpu_list(cpus: set[int]) -> str:
     if not cpus:
         return ""
@@ -129,6 +139,11 @@ def thread_siblings(cpu: int) -> set[int]:
 
 def primary_sibling(cpu: int) -> int | None:
     siblings = sorted(thread_siblings(cpu) - {cpu})
+    if len(siblings) > 1:
+        raise GuardError(
+            f"CPU {cpu} has multiple SMT siblings ({format_cpu_list(set(siblings))}); "
+            "perf-run-guard currently supports at most one sibling and refuses to continue"
+        )
     return siblings[0] if siblings else None
 
 
@@ -510,10 +525,22 @@ def set_child_affinity(cpu: int) -> None:
     os.sched_setaffinity(0, {cpu})
 
 
+def create_output_dir(output_dir: Path) -> None:
+    try:
+        output_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as exc:
+        raise GuardError(
+            f"output directory already exists: {output_dir}; choose a unique run directory "
+            "to preserve prior evidence"
+        ) from exc
+    except OSError as exc:
+        raise GuardError(f"could not create output directory {output_dir}: {exc}") from exc
+
+
 def run_guard(args: argparse.Namespace) -> int:
     command = normalize_command(args.command)
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    create_output_dir(output_dir)
     raw_path = output_dir / "samples.jsonl"
     stdout_path = output_dir / "command.stdout"
     stderr_path = output_dir / "command.stderr"
@@ -729,8 +756,12 @@ def scan_guard(args: argparse.Namespace) -> int:
 
 def summarize_guard(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     summary_path = manifest_path.with_name("summary.md")
+    if summary_path.exists() and not args.overwrite:
+        raise GuardError(
+            f"summary already exists: {summary_path}; pass --overwrite only when replacing it is intentional"
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     write_summary_md(summary_path, manifest)
     print(summary_path)
     return 0
@@ -760,7 +791,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--busy-threshold-pct", type=float, default=5.0)
     run.add_argument("--sibling-threshold-pct", type=float, default=5.0)
     run.add_argument("--target-min-busy-pct", type=float, default=20.0)
-    run.add_argument("--min-samples", type=int, default=1)
+    run.add_argument("--min-samples", type=positive_int, default=1)
     run.add_argument("--process-min-ticks", type=int, default=1)
     run.add_argument("--no-affinity", action="store_true", help="do not pin child command to target CPU")
     run.add_argument("--allow-noisy", action="store_true", help="return command exit code even if guard decision is not clean")
@@ -768,6 +799,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=run_guard)
 
     summary = subparsers.add_parser("summary", help="regenerate Markdown summary from manifest.json")
+    summary.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace an existing summary.md after explicit confirmation",
+    )
     summary.add_argument("manifest")
     summary.set_defaults(func=summarize_guard)
     return parser
