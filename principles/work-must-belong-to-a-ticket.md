@@ -70,11 +70,11 @@ aticket-cli ticket "$TICKET_DIR" brief
 - **无当前 ticket 时的启动流程**：`无 ticket 不能继续` 的含义是不能直接进入实质命令 / repo 写操作；agent 仍然要自己执行只读 discover（`aticket-cli tickets search --query "<keywords>"` 或顶层 `tickets/*/TICKET.md` 扫描），判断是否有可复用 ticket。没有可复用 ticket 时，agent 应自己 `aticket-cli ticket new --topic "<topic>" --goal "<goal>"` 新建并默认 claim，随后立刻 `aticket-cli ticket "$TICKET_DIR" brief`，再继续工作。不要把这条规则理解成必须等待 human 先提供 ticket。
 - **复用当前 ticket**：同一工作目标、同一 repo、同一 handoff 单元里的探索 / 实现 / 验证 / 补查 → 继续用现有 `TICKET_DIR`
 - **新建 ticket**：没有可复用 ticket，或工作目标已切换成新的独立交付物 / 审计链
-- **fork 独立 ticket**：source ticket 已形成可恢复状态，后续工作是 monitor / publish / sediment / cleanup 这类派生任务；同一个大 ticket 下不同 branch / PR / benchmark / docs 分支任务，如果需要继承父上下文，也属于 fork 语义
+- **fork 独立 ticket**：source ticket 已形成可恢复状态，后续工作是独立 monitor / publication line / sediment / cleanup 等派生任务；同一个大 ticket 下不同 branch / PR line / benchmark / docs 分支任务，如果需要继承父上下文，也属于 fork 语义。同一 branch 首次 push / PR、PR 更新和 review-finding 修复仍复用实现 ticket
 
 **经验口径**：`same goal, same repo, same handoff unit => reuse`。不要把 ticket 的边界退化成「一个命令一个 ticket」。
 
-同时也不要把 ticket 边界退化成「同一个大领域一个 ticket」。如果出现新 repo、PR、外部文档族、benchmark 环境、外部运行态、source repo 切换，或 `Links` / workspace 规模明显膨胀，先按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 做 handoff unit 边界检查。相关领域连续讨论只能说明需要互相链接，不能自动说明应该继续写同一个 ticket。
+同时也不要把 ticket 边界退化成「同一个大领域一个 ticket」。如果出现新 repo、PR、文档页面族、benchmark 环境、外部运行态、source repo 切换，或 `Links` / workspace 规模明显膨胀，先按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 做 handoff unit 边界检查。相关领域连续讨论只能说明需要互相链接，不能自动说明应该继续写同一个 ticket。
 
 大 ticket 可以保留为 coordination / index ticket；同一大 ticket 下的 branch-specific 小 ticket 不是偏离 parent，而是把某条分支的 workspace、owner、PR/review 状态和 next action 独立化。需要继承 parent 当前上下文时优先 `fork`，不需要继承时再 `ticket new`。
 
@@ -91,29 +91,31 @@ aticket-cli tickets search --query "jp10 signal backfill" --lifecycle-state ALL
 
 简单读取直接读顶层 ticket 目录和 `TICKET.md`；跨 ticket 全文检索才使用 `aticket-cli tickets search --query "<keywords>"`。不要递归扫整个 `tickets/` 树，否则会命中 ticket `workspace/` 里的模板、fixture 或 cloned repo 文件。创建新 ticket 前先查是否已有同目标 BACKLOG/ACTIVE ticket；如果只搜到 ARCHIVED ticket，不要继续写入，应该新建或 fork。找到可复用 BACKLOG ticket 后，先 `aticket-cli ticket "$TICKET_DIR" claim`；找到其他 agent 持有的 ACTIVE ticket 时先确认接管/并行语义。
 
+默认由 agent 自主完成这项选择：明确匹配的 self-owned ACTIVE / BACKLOG ticket 直接复用或 claim；没有明确匹配项、或只找到 ARCHIVED 历史票时直接新建（需要继承上下文时 fork）。读完旧票后仍存在实质歧义——例如两张旧票都可能是当前工作的 handoff unit，或无法判断当前请求是旧票的继续还是独立交付物——才询问 human 选择哪条工作线。其他 agent 持有的 ACTIVE ticket 仍是例外：必须先确认接管还是并行新建。
+
 ### 用户只要求开新 ticket 时
 
 如果用户的请求语义是“给后续工作开一个新 ticket / 记录一个 follow-up / 准备转手给其他 agent”，但没有明确要求**当前 agent**继续做，agent 只能：
 
 1. 用 `aticket-cli ticket new --backlog` 创建新 ticket，写清 goal / short-context / 来源。
-2. 在对话里展示新 ticket 路径、goal、lifecycle=`BACKLOG`，确认这是 handoff ticket。
+2. 在对话里展示新 ticket 路径、goal、lifecycle=`BACKLOG`，说明这是 handoff ticket。
 3. 停止推进该 ticket 内的实质工作；不要 claim、不要创建 repo worktree、不要实现、不要验证目标任务。
 
 这是 handoff 语义，不是执行授权。常见表述包括“开个新 ticket”“给这个开 ticket”“记录一个后续 ticket”“开新 ticket 让别人做”。
 
 只有当用户明确说当前 agent 要做，例如“开新 ticket 去做”“新建 ticket 然后你继续修”“用新 ticket 做完这个”，才把新 ticket 作为当前工作 ticket claim 后继续推进。
 
-### Ticket 生命周期操作后的 human 确认
+### Ticket 生命周期操作后的结果报告
 
-`aticket-cli ticket new` / `aticket-cli ticket "$TICKET_DIR" fork` / `aticket-cli ticket "$TICKET_DIR" release` / `aticket-cli ticket "$TICKET_DIR" archive` 会改变工作边界或生命周期，执行后必须立刻向 human 明确确认结果，再继续后续推进：
+`aticket-cli ticket new` / `aticket-cli ticket "$TICKET_DIR" fork` / `aticket-cli ticket "$TICKET_DIR" release` / `aticket-cli ticket "$TICKET_DIR" archive` 后，agent 立即在对话里陈述结果和下一步；已由用户目标和边界判断确定的下一步随即执行：
 
-- **new 之后**：展示新 ticket 路径、goal、claim 状态，并确认后续工作将归属到这个 ticket。
-- **只开 ticket 的 new 之后**：使用 `--backlog`，展示新 ticket 路径、goal、BACKLOG 状态；确认这是 handoff ticket，不继续执行目标任务。
-- **fork 之后**：展示 source ticket、forked ticket、fork goal，并确认后续是否切到 forked ticket 推进，还是只把 forked ticket 作为 follow-up 记录。
-- **release 之后**：展示 released ticket、当前状态、下一步 owner/first action，并明确这是让出推进权 / handoff 语义；如果当前 agent 仍负责 parent 协调、回写或收口，不要因为切到 forked child ticket 就自动 release parent。
-- **archive 之后**：展示 archived ticket，并确认当前工作已收口；如果还要继续，必须经 human 确认后新建或 fork 新 ticket，不能继续写 archived ticket。
+- **new 之后**：展示新 ticket 路径、goal、claim 状态，并继续将后续工作归属到它。
+- **只开 ticket 的 new 之后**：使用 `--backlog`，展示新 ticket 路径、goal、BACKLOG 状态；这是 handoff 记录，不执行该 ticket 的目标任务。
+- **fork 之后**：展示 source / forked ticket 和 fork goal；已由边界判断确定要切换时直接切到 forked ticket，否则按已知 next action 保持或 release child。
+- **release 之后**：展示 released ticket、当前状态、下一步 owner/first action，并明确这是让出推进权 / handoff 语义；仍负责 parent 协调、回写或收口的 agent 保持 parent ACTIVE。
+- **archive 之后**：展示 archived ticket 和收口结果；若目标仍有独立后续，按已明确的边界新建或 fork，不继续写 archived ticket。
 
-确认必须发生在对话里，不能只写进 `TICKET.md`。如果 human 没有确认，不要把工作边界切到新 ticket / forked ticket，不要把 release 误表达成“仍由当前 agent 持有”，也不要在 archive 后继续追加实质工作。
+执行顺序是：完成 discover 与边界判断，执行 lifecycle 操作，报告 ticket 路径、状态和下一步，然后执行已经确定的下一步。只有“是否应继续某张旧 ticket”在 **操作前** 的 discover 后仍无法合理判断时，才暂停向 human 提问。工具要求的 `--human-confirm-*` / `--confirm-*` 保护绕过、接管其他 agent 持有的 ACTIVE ticket，以及用户尚未授权继续执行的 handoff ticket，仍按各自规则处理。
 
 ### 创建 ticket
 
@@ -160,7 +162,8 @@ aticket-cli ticket "$TICKET_DIR" claim --force --confirm-human-approved-takeover
 ```bash
 FORKED_TICKET_DIR=$(aticket-cli ticket "$SOURCE_TICKET_DIR" fork \
   --topic "monitor-jp10-backfill" \
-  --goal "Monitor jp10 backfill after merge")
+  --goal "Monitor jp10 backfill after merge" \
+  --boundary-reason "Post-merge monitoring has a separate owner, acceptance condition, and handoff")
 aticket-cli ticket "$FORKED_TICKET_DIR" brief
 ```
 
@@ -182,7 +185,7 @@ ticket 解决证据链、lease 和工作容器；git worktree 解决仓库写路
 1. 一条真实的 `log`，或用 `add-item` 记录产出的资源入口
 2. 必要时维护精简的 `short-context`
 3. 必要时维护 `Must remember`，把不能忘的 principle / preflight / invariant / human instruction 写成最多 16 条的 list；满了先删除过时条目
-4. 对 `aticket-cli ticket new` / `aticket-cli ticket "$TICKET_DIR" fork` / `aticket-cli ticket "$TICKET_DIR" release` / `aticket-cli ticket "$TICKET_DIR" archive` 操作，在对话里完成 human 确认，并把确认结论作为 `log` 记录到相关 ticket
+4. 对 `aticket-cli ticket new` / `aticket-cli ticket "$TICKET_DIR" fork` / `aticket-cli ticket "$TICKET_DIR" release` / `aticket-cli ticket "$TICKET_DIR" archive` 操作，在对话里报告结果并在 ticket 记录状态；只有旧票归属确实不明或工具保护要求时，才记录 human 的确认结论
 
 ```bash
 aticket-cli ticket "$TICKET_DIR" log "$(date +%H:%M): Confirmed utop2-token mismatch in live query"
@@ -203,7 +206,7 @@ aticket-cli ticket "$TICKET_DIR" archive
 ## 相关原则
 
 - [deferred-work-must-become-ticket](deferred-work-must-become-ticket.md) — 延迟工作必须进入当前 ticket 或创建 backlog/fork ticket
-- [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) — 新 repo / PR / 外部文档族 / benchmark / source repo 切换等独立 handoff unit 必须拆票
+- [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) — 新 repo / PR / 页面族 / benchmark / source repo 切换等独立 handoff unit 必须拆票
 - [persistent-state-must-be-externalized](persistent-state-must-be-externalized.md) — 持久化状态必须外部化到 ticket 目录
 - [ticket-lifecycle-boundary-check](ticket-lifecycle-boundary-check.md) — ticket 收口前必须写清 final result、external state、next owner、剩余风险和 workspace 状态
 - [code-work-preflight](code-work-preflight.md) — ticket owns `workspace/`，repo 写操作仍必须使用并验证 linked git worktree

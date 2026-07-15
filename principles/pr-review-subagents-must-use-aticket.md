@@ -1,5 +1,5 @@
 ---
-description: "PR review subagent 必须接受 sts-harness 控制面上下文，并把 review 归属到 aticket：先搜历史 ticket，再用 ticket workspace 做实验，并把结论、证据和发布物双向链接"
+description: "PR review subagent 必须接受 sts-harness 控制面上下文，并把 review 归属到 aticket：先搜历史 ticket，先独立发现问题，再复核已知问题，用 ticket workspace 做实验，并把结论、证据和发布物双向链接"
 triggers:
   - "review PR"
   - "PR review"
@@ -28,7 +28,7 @@ PR review 不是纯读对话任务。只要 agent 或 subagent 要判断一个 P
 
 - 人工请求 agent / subagent review 一个 PR
 - 父 agent 派多个 subagent 分别 review diff、测试、设计或风险面
-- wrapper 自动运行 reviewer 并准备发布 GitHub 或其他 forge review 结果
+- wrapper 自动运行 reviewer 并准备发布 GitHub / forge / 文档页面 review 结果
 - review 期间需要搜索历史 ticket、checkout PR、跑测试、写 notes 或发布 comment
 
 不适用：
@@ -53,13 +53,19 @@ PR review 不是纯读对话任务。只要 agent 或 subagent 要判断一个 P
 5. **实验环境放在 ticket `workspace/`。**
    需要 checkout PR 分支、跑测试、写 scratch patch 或复现脚本时，在当前 review ticket 的 `workspace/` 下创建 linked worktree。只写 ticket 内 scratch 文件不需要 git worktree，但不能写进主 checkout。
 
-6. **review 过程结论必须持久化。**
+6. **已知问题不能替代独立 review。**
+   父 agent / wrapper 可以把已经发现的问题传给 subagent，但这些问题只能作为背景和后续复核项，不能成为唯一 review 目标。subagent 必须先按自己的 focus 做一轮独立问题发现：建立 changed-surface inventory、选择高风险路径、搜索跨文件影响，并记录未覆盖范围；然后再回到已知问题，确认是否复现、是否还有变体、是否存在同类遗漏。父 agent 不应要求 subagent “只看这个 finding 是否成立”，除非任务明确是单点复核且不声称完成 PR review。
+
+7. **先做 compact review inventory，再展开细节。**
+   review 的慢点通常不是 shell 命令，而是把大块 `git diff` / `rg` 输出塞进模型上下文。先用 `git diff --stat`、`git diff --name-status`、`git diff --unified=0`、`rg -l` 或 `rg --count-matches` 建立紧凑 inventory；只对候选 finding、关键文件和命中项展开带上下文的 diff / search 输出。不要默认用大 `--unified` diff 或全仓 `rg -n` dump 作为第一轮输入。
+
+8. **review 过程结论必须持久化。**
    关键命令、测试结果、重要推理、被排除的 false positive、候选 finding 和最终 finding 都要写入 ticket log、notes，或写成文件后用 `add-item` 登记。不要只把结论留在 subagent 的最终消息里。
 
-7. **发布物和 ticket 双向链接。**
-   PR comment、PR description 更新、review note 等外部发布物必须标注 ticket；发布后把外部 URL 用 `add-item` 反向登记到 ticket。
+9. **发布物和 ticket 双向链接。**
+   PR comment、PR description 更新、文档页面 review note 等外部发布物必须标注 ticket；发布后把外部 URL 用 `add-item` 反向登记到 ticket。
 
-8. **review child ticket 产出 review artifact 后应收口归档。**
+10. **review child ticket 产出 review artifact 后应收口归档。**
    独立 review / subagent review ticket 的目标是产出 review 证据和结论，而不是继续拥有被审 PR 的修复动作。`notes/review-findings.md`、review dump、PR comment 或父 ticket summary 已经落地后，review child ticket 应写清 final result 并 `archive`。如果 finding 需要修复，由 parent implementation ticket、作者、human，或新 follow-up ticket 接手；不要把已完成的 review child ticket `release` 回 BACKLOG 只为等待 parent 处理 finding。
 
 ## 推荐工作流
@@ -114,10 +120,14 @@ Use ticket: <sub-review-ticket-dir>
 Review target: <repo> PR <id> / <branch> / <commit>
 Focus: <focus>
 Relevant historical tickets already found: <ticket paths or none>
+Known findings to verify after independent pass: <none or finding ids/summaries>
+Review process: first do independent issue discovery with compact review inventory; expand only candidate finding areas. After that, verify known findings and search for nearby variants.
 Launch mode: yolo; experiments must stay inside the claimed ticket workspace and notes/artifacts.
 ```
 
-如果 subagent 的运行环境不能读本地文件，父 agent 必须把 sts-harness 的必要规则摘要内联到 subagent prompt：ticket ownership、历史 ticket search、ticket `workspace/` 实验隔离、持久化 findings、发布物回链。否则这个 subagent 不能被当作符合 sts-harness 的 reviewer。
+如果 subagent 的运行环境不能读本地文件，父 agent 必须把 sts-harness 的必要规则摘要内联到 subagent prompt：ticket ownership、历史 ticket search、ticket `workspace/` 实验隔离、独立发现优先、持久化 findings、发布物回链。否则这个 subagent 不能被当作符合 sts-harness 的 reviewer。
+
+已知 finding 的传递要保持克制：给足文件、症状、复现线索即可，不要把父 agent 的完整推理链写成 subagent 的结论。需要多 subagent 评审时，优先按风险面或代码区域分配 focus；不要把所有 subagent 都锚定到同一条已知 finding 上反复确认。
 
 sts-harness 控制面规则和目标 repo 本地规则都要加载，职责不同：
 
@@ -163,9 +173,37 @@ git branch --show-current
 
 `REVIEW_SLUG` 必须对每个并行 review subagent 唯一，优先使用 focus 名或 ticket slug。不要让多个 subagent 为同一个 PR 复用相同 local branch 名；Git 会拒绝同一 branch 被多个 worktree checkout。
 
-`<verified-pr-ref>` 必须来自实际 forge / CLI / remote 信息。如果本地已有 PR source branch，按实际 PR branch checkout；不要猜 forge-specific refspec，首次使用前先查对应 CLI / remote 的真实形态。
+`<verified-pr-ref>` 必须来自实际 forge / CLI / remote 信息。若本地已有 PR source branch，按实际 PR branch checkout；不要猜 forge-specific refspec，首次使用前先查对应 CLI / remote 的真实形态。
 
-### 5. 持久化 review 证据
+### 5. 先生成 compact review inventory
+
+先用低输出命令确定 review 面，再决定哪些文件需要展开读取：
+
+```bash
+git diff --stat <base>...<head>
+git diff --name-status <base>...<head>
+git diff --unified=0 <base>...<head> -- <focus-files>
+rg -l "<broad-risk-pattern>" .
+rg --count-matches "<broad-risk-pattern>" .
+```
+
+inventory 应记录到 ticket log 或 `notes/review-findings.md`，至少包含：
+
+- changed files / diffstat
+- 高风险文件或目录
+- broad search 的匹配文件和匹配数量
+- 需要展开 full diff / file read 的候选文件
+- 暂不展开的文件及理由
+- 独立发现阶段完成后，再复核的已知 finding 列表
+
+展开规则：
+
+- 只有候选 finding、API/contract 变更、索引/路由入口、迁移逻辑、测试覆盖缺口等需要带上下文 diff。
+- broad internal-reference、stale-link、关键词泄漏类检查先看 `rg -l` / count；只有命中文件再跑 `rg -n`，必要时限制到路径或 pattern。
+- 如果需要保留大 raw output，把它放进 ticket `artifacts/`，再把精简摘要喂给模型；不要让全量 raw output 成为默认 review 输入。
+- 同一个大 diff 不要按不同分组重复 dump。已经分类为低风险的文件，只在 focus 改变或出现新证据时重新展开。
+
+### 6. 持久化 review 证据
 
 短记录用 log：
 
@@ -189,11 +227,12 @@ aticket-cli ticket "$TICKET_DIR" add-item \
 - 历史 ticket 搜索关键词和相关结果
 - 已检查的 diff 面和未检查的面
 - 执行过的命令、测试和关键输出位置
-- 最终 findings：severity、文件行号、证据、建议修法
+- 独立发现的新 findings：severity、文件行号、证据、建议修法
+- 已知 findings 的复核结果：confirmed / rejected / related variant found，并写明证据
 - 被排除的候选问题和排除理由
 - 如果需要后续工作，应该留在本 ticket 还是新建 / fork ticket
 
-### 6. 发布 review 并回链
+### 7. 发布 review 并回链
 
 PR comment 或 review summary 中必须包含 ticket 引用：
 
@@ -205,12 +244,12 @@ Ticket: file:///home/tsshi/agent-tickets/tickets/<ticket-name>
 
 ```bash
 aticket-cli ticket "$TICKET_DIR" add-item \
-  "https://github.com/<owner>/<repo>/pull/<id>"
+  "https://<forge>/<repo>/pull-requests/<id>"
 aticket-cli ticket "$TICKET_DIR" context \
   "Review published; next owner: parent ticket / PR author. Key evidence in notes/review-findings.md."
 ```
 
-### 7. 收口 review child ticket
+### 8. 收口 review child ticket
 
 review child ticket 在 review artifact 已产出后应归档。归档前写清：
 
@@ -232,7 +271,8 @@ aticket-cli ticket "$TICKET_DIR" archive
 如果父 agent 同时派多个 subagent：
 
 - **不同 focus 用不同 ticket**：例如 `api-contract`、`migration-risk`、`test-coverage`。每个 ticket 有自己的 lease 和 workspace。
-- **父 ticket 做汇总**：父 ticket 记录 subagent ticket 链接、合并后的最终 finding 列表和发布状态。
+- **避免重复锚定已知问题**：已知 finding 可以分配给一个 subagent 做复核，其他 subagent 应按独立风险面寻找新问题。确实需要多人复核同一 finding 时，父 ticket 必须说明原因，例如高风险结论需要独立验证。
+- **父 ticket 做汇总**：父 ticket 记录 subagent ticket 链接、合并后的最终 finding 列表和发布状态，并区分 new findings、known-finding confirmations 和 no-new-finding evidence。
 - **不要共享实验 worktree**：并行 subagent 不能写同一个 checkout；需要同一 PR 代码时，各自在自己的 ticket `workspace/` 下建 worktree。
 - **需要补充给别人的 active ticket 时用 message**：不接管对方 ticket，只用 `aticket-cli message send --ticket "$TARGET" ...` 投递短消息或资源链接。
 

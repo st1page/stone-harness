@@ -39,7 +39,7 @@ triggers:
 - 发布 release notes、runbook、报告、benchmark 结论、review 结果
 - 任何会被对话外读者消费、转发或长期引用的 agent 产物
 
-发布前还要判断这次发布是否已经形成新的 handoff unit。新 PR、外部文档族、多轮文档页面或正式 benchmark 结论经常不只是“给当前 ticket 加一个链接”，而是新的 workstream；按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 先做边界检查。
+发布前还要判断这次发布是否已经形成新的 handoff unit。独立 PR 线、外部文档族、多轮文档页面或正式 benchmark 结论可能不只是“给当前 ticket 加一个链接”，而是新的 workstream；按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 先做边界检查。同一 goal / branch 的首次 PR、PR 更新和 review-finding 修复默认只回链当前实现 ticket，不为 publication 拆 child。
 
 ## 如何应用
 
@@ -103,5 +103,5 @@ PR 合并前也可以发布正式结论，但正文必须清楚说明结论绑�
 ## 相关原则
 
 - [work-must-belong-to-a-ticket](work-must-belong-to-a-ticket.md) — 每次工作必须归属到一个 ticket
-- [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) — 新 PR / 外部文档族 / benchmark 报告可能需要拆成新 ticket
+- [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) — 独立 PR 线 / 外部文档族 / benchmark 报告可能需要拆成新 ticket
 - [persistent-state-must-be-externalized](persistent-state-must-be-externalized.md) — 持久化状态必须外部化到 ticket 目录
