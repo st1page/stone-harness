@@ -27,11 +27,17 @@ triggers:
 
 ## 工具入口
 
-本仓库已经携带 `perf-run-guard`，不需要另行安装或依赖其他工作仓库。先从当前 checkout 定位脚本：
+本仓库已经携带 `perf-run-guard`，不需要另行安装。benchmark 通常在另一个 repo 的
+ticket worktree 中运行，因此必须显式指定 stone-harness checkout；不要用当前 repo
+的顶层目录猜工具位置：
 
 ```bash
-STONE_HARNESS_ROOT="${STONE_HARNESS_ROOT:-$(git rev-parse --show-toplevel)}"
+: "${STONE_HARNESS_ROOT:?set STONE_HARNESS_ROOT to the stone-harness checkout}"
 PERF_RUN_GUARD="$STONE_HARNESS_ROOT/tools/perf-run-guard/perf_run_guard.py"
+test -x "$PERF_RUN_GUARD" || {
+  echo "perf-run-guard not found or not executable: $PERF_RUN_GUARD" >&2
+  exit 1
+}
 python3.12 "$PERF_RUN_GUARD" --help
 ```
 
@@ -85,6 +91,11 @@ python3.12 "$PERF_RUN_GUARD" run \
 如果 benchmark 本身很短，必须延长 benchmark 迭代或提高 guard 的最小样本要求；不能因为运行过快没有样本，就把结果当作 clean。
 
 `--min-samples` 必须是大于等于 1 的整数。当前实现支持无 SMT 或每个 core 只有一个 sibling 的拓扑；如果目标 CPU 暴露多个 sibling，guard 会 fail closed，不会忽略其中任何一个后继续给出 clean 结论。
+
+数值参数必须是有限值：duration/interval 必须大于 0，CPU busy 阈值必须落在
+`0..100`。目标 CPU 的任一样本缺少对应 SMT sibling 遥测时，run 必须拒绝，不能把
+空 sibling 数据解释成干净。`--no-affinity` 无法证明 benchmark 在采样 CPU 上运行，
+因此只能产生 caveated 决策，不能产生 `clean_sample`。
 
 ## 解释结果
 

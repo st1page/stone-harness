@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
+import io
 import sys
 import tempfile
 import unittest
@@ -24,6 +26,37 @@ class ArgumentValidationTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(argparse.ArgumentTypeError):
                     GUARD.positive_int(value)
+
+    def test_float_arguments_must_be_finite_and_in_range(self) -> None:
+        self.assertEqual(GUARD.positive_finite_float("0.1"), 0.1)
+        self.assertEqual(GUARD.percentage_float("100"), 100.0)
+        for value in ("nan", "inf", "-inf", "0", "-1"):
+            with self.subTest(kind="positive", value=value):
+                with self.assertRaises(argparse.ArgumentTypeError):
+                    GUARD.positive_finite_float(value)
+        for value in ("nan", "inf", "-inf", "-1", "101"):
+            with self.subTest(kind="percentage", value=value):
+                with self.assertRaises(argparse.ArgumentTypeError):
+                    GUARD.percentage_float(value)
+
+    def test_invalid_float_is_rejected_before_output_creation(self) -> None:
+        parser = GUARD.build_parser()
+        with tempfile.TemporaryDirectory() as temp:
+            output_dir = Path(temp) / "run"
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    parser.parse_args(
+                        [
+                            "run",
+                            "--output-dir",
+                            str(output_dir),
+                            "--target-min-busy-pct",
+                            "nan",
+                            "--",
+                            "/bin/true",
+                        ]
+                    )
+            self.assertFalse(output_dir.exists())
 
 
 class ArtifactSafetyTests(unittest.TestCase):
@@ -70,6 +103,40 @@ class TopologySafetyTests(unittest.TestCase):
     def test_single_sibling_is_supported(self) -> None:
         with mock.patch.object(GUARD, "thread_siblings", return_value={0, 4}):
             self.assertEqual(GUARD.primary_sibling(0), 4)
+
+
+class DecisionSafetyTests(unittest.TestCase):
+    @staticmethod
+    def args(**overrides: object) -> argparse.Namespace:
+        values = {
+            "min_samples": 1,
+            "sibling_threshold_pct": 5.0,
+            "target_min_busy_pct": 20.0,
+            "no_affinity": False,
+        }
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def test_missing_sibling_telemetry_is_rejected(self) -> None:
+        candidate = GUARD.CleanCandidate(0, 1, 0.0, 0.0, None)
+        decision, _ = GUARD.decide_run(
+            self.args(), candidate, 1, 0, [50.0], []
+        )
+        self.assertEqual(decision, "reject_incomplete_sibling_telemetry")
+
+    def test_no_affinity_is_never_clean(self) -> None:
+        candidate = GUARD.CleanCandidate(0, None, 0.0, None, None)
+        decision, _ = GUARD.decide_run(
+            self.args(no_affinity=True), candidate, 1, 0, [50.0], []
+        )
+        self.assertEqual(decision, "caveated_no_affinity")
+
+    def test_complete_pinned_sample_can_be_clean(self) -> None:
+        candidate = GUARD.CleanCandidate(0, 1, 0.0, 0.0, None)
+        decision, _ = GUARD.decide_run(
+            self.args(), candidate, 1, 1, [50.0], [0.0]
+        )
+        self.assertEqual(decision, "clean_sample")
 
 
 if __name__ == "__main__":

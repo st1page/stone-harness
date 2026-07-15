@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import statistics
@@ -94,6 +95,36 @@ def positive_int(value: str) -> int:
         raise argparse.ArgumentTypeError(f"expected an integer, got: {value}") from exc
     if parsed < 1:
         raise argparse.ArgumentTypeError(f"expected an integer >= 1, got: {value}")
+    return parsed
+
+
+def nonnegative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got: {value}") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"expected an integer >= 0, got: {value}")
+    return parsed
+
+
+def positive_finite_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a number, got: {value}") from exc
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError(f"expected a finite number > 0, got: {value}")
+    return parsed
+
+
+def percentage_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a percentage, got: {value}") from exc
+    if not math.isfinite(parsed) or not 0 <= parsed <= 100:
+        raise argparse.ArgumentTypeError(f"expected a finite percentage in [0, 100], got: {value}")
     return parsed
 
 
@@ -185,6 +216,8 @@ def read_freq_mhz(cpu: int) -> float | None:
             try:
                 value_khz = float(path.read_text(encoding="utf-8").strip())
             except ValueError:
+                continue
+            if not math.isfinite(value_khz) or value_khz <= 0:
                 continue
             return value_khz / 1000.0
     return None
@@ -316,8 +349,19 @@ def scan_candidates(
     busy_threshold_pct: float,
     sibling_threshold_pct: float,
 ) -> tuple[list[CleanCandidate], dict[str, Any]]:
-    if duration_s <= 0 or interval_s <= 0:
-        raise GuardError("--duration and --interval must be positive")
+    if (
+        not math.isfinite(duration_s)
+        or not math.isfinite(interval_s)
+        or duration_s <= 0
+        or interval_s <= 0
+    ):
+        raise GuardError("--duration and --interval must be finite and positive")
+    for name, value in (
+        ("busy threshold", busy_threshold_pct),
+        ("sibling threshold", sibling_threshold_pct),
+    ):
+        if not math.isfinite(value) or not 0 <= value <= 100:
+            raise GuardError(f"{name} must be a finite percentage in [0, 100]")
     sample_cpus = set(target_cpus)
     for cpu in target_cpus:
         sibling = primary_sibling(cpu)
@@ -409,7 +453,10 @@ def write_summary_md(path: Path, manifest: dict[str, Any]) -> None:
         f"Command exit code: `{result['returncode']}`",
         f"CPU: `{cpu}`",
         f"SMT sibling: `{sibling}`",
+        f"Affinity applied: `{manifest['affinity_applied']}`",
         f"Samples: `{manifest['samples']}`",
+        f"Sibling samples: `{manifest.get('sibling_samples', 0)}`",
+        f"Paired sibling samples: `{manifest.get('paired_sibling_samples', 0)}`",
         "",
         "## CPU State",
         "",
@@ -537,6 +584,48 @@ def create_output_dir(output_dir: Path) -> None:
         raise GuardError(f"could not create output directory {output_dir}: {exc}") from exc
 
 
+def decide_run(
+    args: argparse.Namespace,
+    candidate: CleanCandidate,
+    samples: int,
+    paired_sibling_samples: int,
+    target_busy: list[float],
+    sibling_busy: list[float],
+) -> tuple[str, str]:
+    if samples < args.min_samples:
+        return (
+            "reject_insufficient_samples",
+            f"collected only {samples} samples; minimum is {args.min_samples}",
+        )
+    if candidate.sibling is not None and paired_sibling_samples < samples:
+        return (
+            "reject_incomplete_sibling_telemetry",
+            f"SMT sibling CPU {candidate.sibling} was observed alongside the target in only "
+            f"{paired_sibling_samples} of {samples} target samples",
+        )
+    if sibling_busy and max(sibling_busy) > args.sibling_threshold_pct:
+        return (
+            "discard_sibling_interference",
+            f"SMT sibling busy max {max(sibling_busy):.2f}% exceeded "
+            f"{args.sibling_threshold_pct:.2f}% threshold",
+        )
+    if target_busy and max(target_busy) < args.target_min_busy_pct:
+        return (
+            "caveated_target_not_busy",
+            f"target CPU busy max {max(target_busy):.2f}% was below "
+            f"{args.target_min_busy_pct:.2f}% minimum; benchmark may not have run on target CPU",
+        )
+    if args.no_affinity:
+        return (
+            "caveated_no_affinity",
+            "child affinity was disabled, so the guard cannot prove that the benchmark ran on the sampled CPU",
+        )
+    return (
+        "clean_sample",
+        "target CPU was observed and SMT sibling telemetry stayed complete and within threshold",
+    )
+
+
 def run_guard(args: argparse.Namespace) -> int:
     command = normalize_command(args.command)
     output_dir = Path(args.output_dir)
@@ -584,6 +673,7 @@ def run_guard(args: argparse.Namespace) -> int:
     target_freq: list[float] = []
     suspicious: list[dict[str, Any]] = []
     samples = 0
+    paired_sibling_samples = 0
     with (
         stdout_path.open("wb") as stdout_file,
         stderr_path.open("wb") as stderr_file,
@@ -631,6 +721,8 @@ def run_guard(args: argparse.Namespace) -> int:
                     target_freq.append(target.freq_mhz)
             if sibling is not None:
                 sibling_busy.append(sibling.busy_pct)
+            if target is not None and sibling is not None:
+                paired_sibling_samples += 1
             suspicious.extend(proc_rows)
             raw.write(
                 json.dumps(
@@ -662,24 +754,14 @@ def run_guard(args: argparse.Namespace) -> int:
     end = time.time()
     mem_end = read_meminfo()
 
-    if samples < args.min_samples:
-        reason = f"collected only {samples} samples; minimum is {args.min_samples}"
-        decision = "reject_insufficient_samples"
-    elif sibling_busy and max(sibling_busy) > args.sibling_threshold_pct:
-        reason = (
-            f"SMT sibling busy max {max(sibling_busy):.2f}% exceeded "
-            f"{args.sibling_threshold_pct:.2f}% threshold"
-        )
-        decision = "discard_sibling_interference"
-    elif target_busy and max(target_busy) < args.target_min_busy_pct:
-        reason = (
-            f"target CPU busy max {max(target_busy):.2f}% was below "
-            f"{args.target_min_busy_pct:.2f}% minimum; benchmark may not have run on target CPU"
-        )
-        decision = "caveated_target_not_busy"
-    else:
-        reason = "target CPU was observed and SMT sibling stayed within threshold"
-        decision = "clean_sample"
+    decision, reason = decide_run(
+        args,
+        candidate,
+        samples,
+        paired_sibling_samples,
+        target_busy,
+        sibling_busy,
+    )
 
     manifest = {
         "tool": "perf_run_guard",
@@ -698,6 +780,8 @@ def run_guard(args: argparse.Namespace) -> int:
         "end_time": end,
         "duration_s": round(end - start, 6),
         "samples": samples,
+        "sibling_samples": len(sibling_busy),
+        "paired_sibling_samples": paired_sibling_samples,
         "target_busy_pct": summarize_values(target_busy),
         "sibling_busy_pct": summarize_values(sibling_busy),
         "target_freq_mhz": summarize_values(target_freq),
@@ -775,25 +859,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = subparsers.add_parser("scan", help="find currently clean CPU/SMT pairs")
     scan.add_argument("--cpus", help="CPU allow-list such as 0-15,24")
-    scan.add_argument("--duration", type=float, default=1.0, help="scan duration in seconds")
-    scan.add_argument("--interval", type=float, default=0.2, help="sampling interval in seconds")
-    scan.add_argument("--busy-threshold-pct", type=float, default=5.0)
-    scan.add_argument("--sibling-threshold-pct", type=float, default=5.0)
-    scan.add_argument("--limit", type=int, default=32, help="maximum candidates to print; 0 means all")
+    scan.add_argument("--duration", type=positive_finite_float, default=1.0, help="scan duration in seconds")
+    scan.add_argument("--interval", type=positive_finite_float, default=0.2, help="sampling interval in seconds")
+    scan.add_argument("--busy-threshold-pct", type=percentage_float, default=5.0)
+    scan.add_argument("--sibling-threshold-pct", type=percentage_float, default=5.0)
+    scan.add_argument("--limit", type=nonnegative_int, default=32, help="maximum candidates to print; 0 means all")
     scan.set_defaults(func=scan_guard)
 
     run = subparsers.add_parser("run", help="run a command with CPU guard and sampling")
     run.add_argument("--cpu", type=int, help="specific target CPU; omit to auto-pick")
     run.add_argument("--cpus", help="CPU allow-list for auto-pick")
     run.add_argument("--output-dir", required=True, help="directory for manifest and raw samples")
-    run.add_argument("--pre-scan", type=float, default=1.0, help="cleanliness scan before starting command")
-    run.add_argument("--interval", type=float, default=0.2, help="sampling interval in seconds")
-    run.add_argument("--busy-threshold-pct", type=float, default=5.0)
-    run.add_argument("--sibling-threshold-pct", type=float, default=5.0)
-    run.add_argument("--target-min-busy-pct", type=float, default=20.0)
+    run.add_argument("--pre-scan", type=positive_finite_float, default=1.0, help="cleanliness scan before starting command")
+    run.add_argument("--interval", type=positive_finite_float, default=0.2, help="sampling interval in seconds")
+    run.add_argument("--busy-threshold-pct", type=percentage_float, default=5.0)
+    run.add_argument("--sibling-threshold-pct", type=percentage_float, default=5.0)
+    run.add_argument("--target-min-busy-pct", type=percentage_float, default=20.0)
     run.add_argument("--min-samples", type=positive_int, default=1)
-    run.add_argument("--process-min-ticks", type=int, default=1)
-    run.add_argument("--no-affinity", action="store_true", help="do not pin child command to target CPU")
+    run.add_argument("--process-min-ticks", type=nonnegative_int, default=1)
+    run.add_argument(
+        "--no-affinity",
+        action="store_true",
+        help="do not pin child command; the result can never be clean_sample",
+    )
     run.add_argument("--allow-noisy", action="store_true", help="return command exit code even if guard decision is not clean")
     run.add_argument("command", nargs=argparse.REMAINDER, help="benchmark command after --")
     run.set_defaults(func=run_guard)
