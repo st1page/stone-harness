@@ -47,7 +47,11 @@ aticket-cli ticket "$TICKET_DIR" brief
 - repo 写操作前，和 linked worktree 校验一起做
 - human 明确新增或修改约束后
 
-`brief` 会集中显示 goal、short-context、`Must remember`、unread messages 和关键计数。普通 ticket 命令成功后，如果该 ticket 有 `Must remember` 条目，也会在 stderr 主动提醒；agent 看到提醒后要把这些条目当作当前 preflight 约束，而不是把它们当作普通日志。维护 `Must remember` 使用 `aticket-cli ticket "$TICKET_DIR" remember "<constraint>"` 添加一条，使用 `aticket-cli ticket "$TICKET_DIR" forget <index>` 删除一条；每个 ticket 最多 16 条，满了先删除过时条目。
+`brief` 会集中显示 goal、short-context、`Must remember` 全文、unread messages 和关键计数。普通 ticket 命令成功后，如果该 ticket 有 `Must remember` 条目，只会在 stderr 提醒条目数、字符预算和完整读取入口，不重复注入正文；agent 必须在阶段边界主动运行 `brief`，把这些条目当作当前 preflight 约束，而不是普通日志。
+
+维护 `Must remember` 使用 `aticket-cli ticket "$TICKET_DIR" remember "<constraint>"` 每次添加一个短小、原子的条目，使用 `aticket-cli ticket "$TICKET_DIR" forget <index>` 删除对应编号。它是始终进入 active path 的有界工作集，不是规格、历史或详细设计存储：每个 ticket 最多 8 条、每条最多 120 个 Unicode 字符、合计最多 640 字符；每个条目必须是非空、无首尾空白的单行安全文本，不能包含控制字符、双向文本格式控制符或未配对 Unicode surrogate。
+
+达到条数、单条或总字符预算时，先重读并梳理 goal、short-context 和现有条目：合并或删除失效项，把细节移到 notes、artifacts 或 log；scope 已变化就更新 goal/context，出现独立 handoff unit 就拆票。CLI 不会自动截断或拆分条目；底层 `Must remember` 存储超限、畸形或不是受支持的 string JSON list 时，所有 ticket 命令直接失败且不修改数据，不提供 projection、repair 或 migration 路径。
 
 ## 为什么
 
@@ -184,7 +188,7 @@ ticket 解决证据链、lease 和工作容器；git worktree 解决仓库写路
 
 1. 一条真实的 `log`，或用 `add-item` 记录产出的资源入口
 2. 必要时维护精简的 `short-context`
-3. 必要时维护 `Must remember`，把不能忘的 principle / preflight / invariant / human instruction 写成最多 16 条的 list；满了先删除过时条目
+3. 必要时维护 `Must remember`，把不能忘的 principle / preflight / invariant / human instruction 写成短小原子工作集；最多 8 条、单条最多 120 个 Unicode 字符、合计最多 640 字符，达到预算时先重构 ticket
 4. 对 `aticket-cli ticket new` / `aticket-cli ticket "$TICKET_DIR" fork` / `aticket-cli ticket "$TICKET_DIR" release` / `aticket-cli ticket "$TICKET_DIR" archive` 操作，在对话里报告结果并在 ticket 记录状态；只有旧票归属确实不明或工具保护要求时，才记录 human 的确认结论
 
 ```bash

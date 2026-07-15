@@ -62,11 +62,16 @@ PR review 不是纯读对话任务。只要 agent 或 subagent 要判断一个 P
 8. **review 过程结论必须持久化。**
    关键命令、测试结果、重要推理、被排除的 false positive、候选 finding 和最终 finding 都要写入 ticket log、notes，或写成文件后用 `add-item` 登记。不要只把结论留在 subagent 的最终消息里。
 
-9. **发布物和 ticket 双向链接。**
+9. **review ticket 必须维护可判定的收口状态。**
+   `aticket-cli` 的 goal、short-context 和 item 是通用字段；不要假设存在未实现的 review 专属 CLI schema。每个独立 review child 应在 short-context 中用稳定、可检索的标签写清：`Review status: IN_PROGRESS|READY_TO_CLOSE|CLOSED_BLOCKED`、`Outcome: PENDING|CLEAN|FINDINGS|INCOMPLETE`、`Parent ticket:`、`Evidence:`、`Fix owner:`，以及预期完成时间或下一次 check-in。`CLOSED_BLOCKED` 必须同时写明具体 blocker、owner 和解除条件，不能只写“waiting”。这些标签既让人能快速判断，也为将来的只读检查保留可靠输入。
+
+10. **发布物和 ticket 双向链接。**
    PR comment、PR description 更新、文档页面 review note 等外部发布物必须标注 ticket；发布后把外部 URL 用 `add-item` 反向登记到 ticket。
 
-10. **review child ticket 产出 review artifact 后应收口归档。**
-   独立 review / subagent review ticket 的目标是产出 review 证据和结论，而不是继续拥有被审 PR 的修复动作。`notes/review-findings.md`、review dump、PR comment 或父 ticket summary 已经落地后，review child ticket 应写清 final result 并 `archive`。如果 finding 需要修复，由 parent implementation ticket、作者、human，或新 follow-up ticket 接手；不要把已完成的 review child ticket `release` 回 BACKLOG 只为等待 parent 处理 finding。
+11. **review child ticket 产出 review artifact 后必须执行收口 epilogue。**
+   独立 review / subagent review ticket 的目标是产出 review 证据和结论，而不是继续拥有被审 PR 的修复动作。`notes/review-findings.md`、review dump、PR comment 或父 ticket summary 已经落地后，child 必须：(a) 写入 `READY_TO_CLOSE`、outcome、evidence、fix owner 和 residual risk；(b) 向 parent ticket 发送简洁的 closure message；(c) 清理已安全清理的 review worktree；(d) `archive`。如果 finding 需要修复，由 parent implementation ticket、作者、human，或新 follow-up ticket 接手；不要把已完成的 review child ticket `release` 回 BACKLOG 只为等待 parent 处理 finding。
+
+   只有明确的 lifecycle guard（例如仍在运行的 job，或 archive 工具要求的 human confirmation）可以阻止 archive。唯一 review 证据必须保留并登记，但它本身不是阻塞理由；只有具体的 size/tool guard 要求 human action 时才使用 `CLOSED_BLOCKED`，并记录 blocker、next owner 和 first action。“等待作者修复”“等 parent 看结果”不是阻塞理由。
 
 ## 推荐工作流
 
@@ -78,7 +83,7 @@ PR review 不是纯读对话任务。只要 agent 或 subagent 要判断一个 P
 TICKET_DIR=$(aticket-cli ticket new \
   --topic "review-<repo>-pr-<id>" \
   --goal "Review <repo> PR <id> and publish actionable findings" \
-  --short-context "Start by searching historical tickets for repo/module/branch context, then inspect PR diff.")
+  --short-context "Review status: IN_PROGRESS. Outcome: PENDING. Parent ticket: none. Evidence: pending. Fix owner: pending. Next check-in: <time>. Start by searching historical tickets for repo/module/branch context, then inspect PR diff.")
 ```
 
 父 agent 派独立 subagent：
@@ -87,7 +92,7 @@ TICKET_DIR=$(aticket-cli ticket new \
 SUB_REVIEW_DIR=$(aticket-cli ticket new \
   --topic "review-<repo>-pr-<id>-<focus>" \
   --goal "Review <repo> PR <id> for <focus>" \
-  --short-context "Spawned from $TICKET_DIR; first search historical tickets, then inspect PR diff for <focus>.")
+  --short-context "Review status: IN_PROGRESS. Outcome: PENDING. Parent ticket: $TICKET_DIR. Evidence: pending. Fix owner: pending. Next check-in: <time>. First search historical tickets, then inspect PR diff for <focus>.")
 aticket-cli ticket "$SUB_REVIEW_DIR" log "Spawned by source ticket: $TICKET_DIR"
 aticket-cli ticket "$TICKET_DIR" add-item "file://$SUB_REVIEW_DIR"
 aticket-cli ticket "$SUB_REVIEW_DIR" add-item "file://$TICKET_DIR"
@@ -258,13 +263,32 @@ review child ticket 在 review artifact 已产出后应归档。归档前写清�
 - next owner：parent ticket / PR author / human / follow-up ticket；不要写成 review child ticket 自己继续等
 - residual risk：未覆盖的 diff 面、未跑的测试、需要 parent 特别处理的 finding
 
+先把结论投递给仍 ACTIVE 的 parent；这样 child archive 后，parent 仍有可见的 fan-in 入口：
+
+```bash
+aticket-cli message send --ticket "$PARENT_TICKET_DIR" \
+  "Review closure: status=READY_TO_CLOSE outcome=<CLEAN|FINDINGS|INCOMPLETE>; evidence=file://$TICKET_DIR/notes/review-findings.md; fix owner=<parent|author|human|follow-up>; residual risk=<...>."
+```
+
+parent holder 收到 message 后，必须把 child 的 outcome、evidence 和 fix owner 汇总到 parent 的 short-context 或 log，并标记 message 已读。child 不应为了等待这个汇总而继续占有 ACTIVE lease；parent 已 archived 或不存在时，在 child 的 final context 里明确写出替代 owner 和为什么无法回传。
+
 ```bash
 aticket-cli ticket "$TICKET_DIR" context \
-  "Final result: review artifact produced; next owner: parent ticket / PR author. Residual risk: <...>. Workspace state: <...>."
+  "Review status: READY_TO_CLOSE. Outcome: <CLEAN|FINDINGS|INCOMPLETE>. Parent ticket: $PARENT_TICKET_DIR. Evidence: file://$TICKET_DIR/notes/review-findings.md. Fix owner: <parent|author|human|follow-up>. Final result: review artifact produced. Residual risk: <...>. Workspace state: <...>."
 aticket-cli ticket "$TICKET_DIR" archive
 ```
 
 如果 review 过程中发现一个独立后续工作，先按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 和 [deferred-work-must-become-ticket](deferred-work-must-become-ticket.md) 新建 / fork follow-up，并双向链接；然后归档 review child ticket。不要让 review child ticket 变成“等待修复”的 backlog 票。
+
+### 9. review ticket 的 stale lifecycle signal
+
+`ACTIVE` lease 只表示曾经有人认领，不能证明 review 仍在推进。出现以下任一情况时，parent / wrapper / 后续协调者应把它当作 lifecycle-debt signal：
+
+- child 已有 review artifact 或明确 outcome，却仍是 ACTIVE；
+- 超过声明的完成时间或 check-in 时间仍无 ticket log / context 更新；若未声明时间，默认以 24 小时无更新作为提示阈值；
+- child 的 short-context 只剩“waiting for parent/author/review”而没有具体 first action。
+
+signal 只触发交接检查，**不**授权自动 archive、force claim 或根据时间戳断定 owner 已失活。先给该 ticket 发送 message，parent 检查自己的 fan-in 状态；仍无响应时由 human 决定接管、开新的 review ticket，还是保留原 lease。确认 review 已完成时，应由当前 holder 完成上述 epilogue；确认未完成但当前 holder 不再推进时，写清 first action 后 release 为 BACKLOG。
 
 ## 多 subagent 模式
 
@@ -272,7 +296,7 @@ aticket-cli ticket "$TICKET_DIR" archive
 
 - **不同 focus 用不同 ticket**：例如 `api-contract`、`migration-risk`、`test-coverage`。每个 ticket 有自己的 lease 和 workspace。
 - **避免重复锚定已知问题**：已知 finding 可以分配给一个 subagent 做复核，其他 subagent 应按独立风险面寻找新问题。确实需要多人复核同一 finding 时，父 ticket 必须说明原因，例如高风险结论需要独立验证。
-- **父 ticket 做汇总**：父 ticket 记录 subagent ticket 链接、合并后的最终 finding 列表和发布状态，并区分 new findings、known-finding confirmations 和 no-new-finding evidence。
+- **父 ticket 做汇总和 fan-in**：父 ticket 记录 subagent ticket 链接、合并后的最终 finding 列表和发布状态，并区分 new findings、known-finding confirmations 和 no-new-finding evidence。对每个 child，parent 还必须能指出 closure message 是否收到、outcome/evidence/fix owner 是什么，以及 child 已 archive 还是有具体 `CLOSED_BLOCKED` 理由；不要把“child 仍 ACTIVE”当作汇总状态。
 - **不要共享实验 worktree**：并行 subagent 不能写同一个 checkout；需要同一 PR 代码时，各自在自己的 ticket `workspace/` 下建 worktree。
 - **需要补充给别人的 active ticket 时用 message**：不接管对方 ticket，只用 `aticket-cli message send --ticket "$TARGET" ...` 投递短消息或资源链接。
 

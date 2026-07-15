@@ -64,6 +64,7 @@ Ticket 生命周期边界检查解决的是"这一步之后当前工作单元应
 | human 肯定说明本地产物就是最终交付且以后不再 push / 发 PR、repo 无 remote、改动已丢弃 / supersede、或采用明确替代交付 | 记录具体依据和 commit / patch / artifact 等恢复入口；目标无后续时可 `archive` |
 | 文档页面 / 外部报告已发布且无后续 | 记录 URL / page id / version；无后续则 `archive` |
 | review child ticket 已产出 review artifact / finding summary | 写清 final result、evidence entry、next owner 和 residual risk 后 `archive`；finding 的修复由 parent / author / human / follow-up ticket 接手，不把 review child `release` 回 BACKLOG 等修复 |
+| ACTIVE review child 已有 artifact/outcome、超过声明 check-in 未更新，或只写“waiting” | 这是 lifecycle-debt signal，不是接管授权：先向 child 发送 message，并由 parent 检查 fan-in；不得仅凭时间戳 auto-archive 或 force claim。确认已完成则由 holder 写 final result 后 archive；确认 owner 不再推进则写清 first action 后 release；无响应时请 human 决定接管或创建 replacement review ticket |
 | 后台 job / tmux 仍在跑 | 保持 ACTIVE；`short-context` 必须写 session 名、输出目录、停止条件和下一次检查方式 |
 | 后续是独立工作单元 | fork 或新建 BACKLOG ticket，双向链接；source ticket 若目标已完成则 `archive` |
 | parent ticket 仍负责协调，某个 branch-specific 任务需要独立推进 | fork child ticket；parent 保持 ACTIVE 并写清 coordination role、child link 和 next coordination action；child 若不是当前立即推进则 release/BACKLOG |
