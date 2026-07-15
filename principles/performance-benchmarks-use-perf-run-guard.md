@@ -27,13 +27,15 @@ triggers:
 
 ## 工具入口
 
-优先加载 `$perf-run-guard` skill，并按 skill 内的 runbook 执行。如果当前 Codex session 尚未看到新装 skill，但本机已经安装 CLI，则直接用：
+本仓库已经携带 `perf-run-guard`，不需要另行安装或依赖其他工作仓库。先从当前 checkout 定位脚本：
 
 ```bash
-perf-run-guard --help
+STONE_HARNESS_ROOT="${STONE_HARNESS_ROOT:-$(git rev-parse --show-toplevel)}"
+PERF_RUN_GUARD="$STONE_HARNESS_ROOT/tools/perf-run-guard/perf_run_guard.py"
+python3.12 "$PERF_RUN_GUARD" --help
 ```
 
-如果 `perf-run-guard` 不在 `PATH`，不得把性能结果当作 clean run 发布。先安装工具，或在 ticket 里明确记录“未使用 guard”的原因和结论降级口径。
+如果当前环境还提供 `$perf-run-guard` skill，可以用它加载更完整的 runbook，但执行入口仍以上述仓库内脚本为准。如果脚本缺失或当前环境不是 Linux，不得把性能结果当作 clean run 发布；在 ticket 里记录缺失条件和结论降级口径。
 
 ## Artifact 位置
 
@@ -52,7 +54,7 @@ mkdir -p "$OUT"
 在新机器、新安装或工具升级后，先跑一个必须失败的 canary，确认 validator 不会假绿：
 
 ```bash
-perf-run-guard run \
+python3.12 "$PERF_RUN_GUARD" run \
   --output-dir "$OUT-canary" \
   --pre-scan 0.1 \
   --interval 0.1 \
@@ -70,9 +72,9 @@ perf-run-guard run \
 先用 scan 观察候选 CPU，再用 run 包住真实 benchmark：
 
 ```bash
-perf-run-guard scan --duration 2 --interval 0.2
+python3.12 "$PERF_RUN_GUARD" scan --duration 2 --interval 0.2
 
-perf-run-guard run \
+python3.12 "$PERF_RUN_GUARD" run \
   --output-dir "$OUT" \
   --pre-scan 2 \
   --interval 0.2 \

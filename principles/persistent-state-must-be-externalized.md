@@ -56,7 +56,7 @@ aticket-cli ticket "$TICKET_DIR" log "$(date +%H:%M): Chose approach A (direct S
 
 ```bash
 aticket-cli ticket "$TICKET_DIR" add-item "https://github.com/example-org/example-repo/pull/123"
-aticket-cli ticket "$TICKET_DIR" add-item "https://docs.example.com/display/PROJ/JP10+Signal+Mapping+Fix"
+aticket-cli ticket "$TICKET_DIR" add-item "https://docs.example.com/reports/jp10-signal-mapping-fix"
 aticket-cli ticket "$TICKET_DIR" add-item "file:///home/tsshi/agent-tickets/tickets/2024-06-01-jp10-fix-123456/artifacts/backfill-results.csv"
 ```
 
@@ -102,7 +102,7 @@ TICKET.md 的 `## Links` 部分用于存放工作相关的 URI（PR/文档/路�
 # 添加单个 URI（去重）
 aticket-cli ticket "$TICKET_DIR" add-item "https://github.com/example-org/example-repo/pull/123"
 aticket-cli ticket "$TICKET_DIR" add-item "file:///home/tsshi/sts-harness"
-aticket-cli ticket "$TICKET_DIR" add-item "https://docs.example.com/display/PROJ/JP10+Signal+Mapping+Fix"
+aticket-cli ticket "$TICKET_DIR" add-item "https://docs.example.com/reports/jp10-signal-mapping-fix"
 ```
 
 读取链接时直接读 `TICKET.md` 或用文件系统工具过滤：

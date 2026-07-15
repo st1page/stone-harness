@@ -249,7 +249,7 @@ Ticket: file:///home/tsshi/agent-tickets/tickets/<ticket-name>
 
 ```bash
 aticket-cli ticket "$TICKET_DIR" add-item \
-  "https://<forge>/<repo>/pull-requests/<id>"
+  "https://github.com/<owner>/<repo>/pull/<id>"
 aticket-cli ticket "$TICKET_DIR" context \
   "Review published; next owner: parent ticket / PR author. Key evidence in notes/review-findings.md."
 ```
