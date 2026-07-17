@@ -95,6 +95,25 @@ class ArtifactSafetyTests(unittest.TestCase):
 
 
 class TopologySafetyTests(unittest.TestCase):
+    def test_missing_topology_fails_closed(self) -> None:
+        with mock.patch.object(GUARD.Path, "read_text", side_effect=FileNotFoundError("missing")):
+            with self.assertRaisesRegex(GUARD.GuardError, "cannot read SMT topology"):
+                GUARD.thread_siblings(7)
+
+    def test_empty_topology_fails_closed(self) -> None:
+        with mock.patch.object(GUARD.Path, "read_text", return_value="\n"):
+            with self.assertRaisesRegex(GUARD.GuardError, "SMT topology.*is empty"):
+                GUARD.thread_siblings(7)
+
+    def test_topology_must_contain_target_cpu(self) -> None:
+        with mock.patch.object(GUARD.Path, "read_text", return_value="8\n"):
+            with self.assertRaisesRegex(GUARD.GuardError, "does not include the target CPU"):
+                GUARD.thread_siblings(7)
+
+    def test_explicit_single_cpu_topology_has_no_sibling(self) -> None:
+        with mock.patch.object(GUARD.Path, "read_text", return_value="7\n"):
+            self.assertIsNone(GUARD.primary_sibling(7))
+
     def test_multiple_siblings_fail_closed(self) -> None:
         with mock.patch.object(GUARD, "thread_siblings", return_value={0, 1, 2}):
             with self.assertRaisesRegex(GUARD.GuardError, "multiple SMT siblings"):
@@ -103,6 +122,52 @@ class TopologySafetyTests(unittest.TestCase):
     def test_single_sibling_is_supported(self) -> None:
         with mock.patch.object(GUARD, "thread_siblings", return_value={0, 4}):
             self.assertEqual(GUARD.primary_sibling(0), 4)
+
+
+class ScanSafetyTests(unittest.TestCase):
+    @staticmethod
+    def scan(intervals: list[tuple[dict[int, object], list[dict[str, object]]]]):
+        monotonic_values = [0.0, 0.0, 0.0, 1.0, 1.0, 2.0]
+        with (
+            mock.patch.object(GUARD, "primary_sibling", return_value=1),
+            mock.patch.object(GUARD.time, "monotonic", side_effect=monotonic_values),
+            mock.patch.object(GUARD, "collect_interval", side_effect=intervals),
+        ):
+            return GUARD.scan_candidates({0}, 2.0, 1.0, 5.0, 5.0)
+
+    def test_partial_sibling_telemetry_is_rejected(self) -> None:
+        target = GUARD.CpuSample(cpu=0, busy_pct=0.0, freq_mhz=3000.0)
+        sibling = GUARD.CpuSample(cpu=1, busy_pct=0.0, freq_mhz=3000.0)
+
+        candidates, summary = self.scan(
+            [({0: target, 1: sibling}, []), ({0: target}, [])]
+        )
+
+        self.assertEqual(candidates, [])
+        self.assertEqual(summary["intervals"], 2)
+        self.assertEqual(summary["incomplete_sibling_telemetry"], 1)
+
+    def test_partial_target_telemetry_is_rejected(self) -> None:
+        target = GUARD.CpuSample(cpu=0, busy_pct=0.0, freq_mhz=3000.0)
+        sibling = GUARD.CpuSample(cpu=1, busy_pct=0.0, freq_mhz=3000.0)
+
+        candidates, summary = self.scan(
+            [({0: target, 1: sibling}, []), ({1: sibling}, [])]
+        )
+
+        self.assertEqual(candidates, [])
+        self.assertEqual(summary["incomplete_target_telemetry"], 1)
+
+    def test_complete_paired_telemetry_is_accepted(self) -> None:
+        target = GUARD.CpuSample(cpu=0, busy_pct=0.0, freq_mhz=3000.0)
+        sibling = GUARD.CpuSample(cpu=1, busy_pct=0.0, freq_mhz=3000.0)
+
+        candidates, summary = self.scan(
+            [({0: target, 1: sibling}, []), ({0: target, 1: sibling}, [])]
+        )
+
+        self.assertEqual([candidate.cpu for candidate in candidates], [0])
+        self.assertEqual(summary["incomplete_sibling_telemetry"], 0)
 
 
 class DecisionSafetyTests(unittest.TestCase):

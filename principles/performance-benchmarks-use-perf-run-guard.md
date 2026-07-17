@@ -90,12 +90,16 @@ python3.12 "$PERF_RUN_GUARD" run \
 
 如果 benchmark 本身很短，必须延长 benchmark 迭代或提高 guard 的最小样本要求；不能因为运行过快没有样本，就把结果当作 clean。
 
-`--min-samples` 必须是大于等于 1 的整数。当前实现支持无 SMT 或每个 core 只有一个 sibling 的拓扑；如果目标 CPU 暴露多个 sibling，guard 会 fail closed，不会忽略其中任何一个后继续给出 clean 结论。
+`--min-samples` 必须是大于等于 1 的整数。当前实现支持无 SMT 或每个 core 只有一个
+sibling 的拓扑；只有成功读取且明确仅包含目标 CPU 的 `thread_siblings_list` 才能证明
+无 SMT。拓扑文件缺失、为空、不包含目标 CPU，或暴露多个 sibling 时，guard 会 fail
+closed。
 
 数值参数必须是有限值：duration/interval 必须大于 0，CPU busy 阈值必须落在
-`0..100`。目标 CPU 的任一样本缺少对应 SMT sibling 遥测时，run 必须拒绝，不能把
-空 sibling 数据解释成干净。`--no-affinity` 无法证明 benchmark 在采样 CPU 上运行，
-因此只能产生 caveated 决策，不能产生 `clean_sample`。
+`0..100`。pre-scan 和运行期的每个目标 CPU interval 都必须有对应 SMT sibling
+遥测；任何缺口都必须拒绝，不能把部分或空 sibling 数据解释成干净。
+`--no-affinity` 无法证明 benchmark 在采样 CPU 上运行，因此只能产生 caveated 决策，
+不能产生 `clean_sample`。
 
 ## 解释结果
 

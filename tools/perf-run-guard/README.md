@@ -33,11 +33,14 @@ python3.12 "$PERF_RUN_GUARD" run \
 
 每次 run 必须使用尚不存在的唯一 output directory；脚本会原子创建目录，并在路径已存在时拒绝运行，以免覆盖既有证据。`--min-samples` 必须大于等于 1。
 
-当前版本支持无 SMT 或每个 core 只有一个 sibling 的拓扑。如果 Linux 报告目标 CPU 有多个 sibling，脚本会 fail closed；它不会忽略额外 sibling 后继续生成 clean 结论。
+当前版本支持无 SMT 或每个 core 只有一个 sibling 的拓扑。只有成功读取且明确仅包含
+目标 CPU 的 `thread_siblings_list` 才能证明无 SMT；拓扑文件缺失、为空、不包含目标
+CPU，或报告多个 sibling 时，脚本都会 fail closed。
 
-运行期如果目标 CPU 的任一样本缺少对应 sibling 遥测，guard 会拒绝该 run，避免把
-遥测缺口当成 sibling 干净。所有数值参数必须有限并处于各自允许范围；`NaN`、
-`Inf`、非正采样间隔以及超出 `0..100` 的百分比会在创建输出目录前被拒绝。
+pre-scan 和运行期如果目标 CPU 的任一采样 interval 缺少对应 sibling 遥测，guard
+都会拒绝该候选或 run，避免把部分遥测覆盖当成 sibling 干净。所有数值参数必须有限
+并处于各自允许范围；`NaN`、`Inf`、非正采样间隔以及超出 `0..100` 的百分比会在
+创建输出目录前被拒绝。
 
 `--no-affinity` 是探索性逃生口：它无法证明命令运行在被采样 CPU 上，因此即使其他
 检查通过也只会生成 `caveated_no_affinity`，不会生成 `clean_sample`。

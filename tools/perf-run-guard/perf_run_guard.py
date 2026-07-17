@@ -162,10 +162,19 @@ def list_online_cpus() -> set[int]:
 
 def thread_siblings(cpu: int) -> set[int]:
     path = Path(f"/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list")
-    if not path.exists():
-        return {cpu}
-    text = path.read_text(encoding="utf-8").strip()
-    return parse_cpu_list(text) if text else {cpu}
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise GuardError(f"cannot read SMT topology for CPU {cpu} from {path}: {exc}") from exc
+    if not text:
+        raise GuardError(f"SMT topology for CPU {cpu} is empty: {path}")
+    siblings = parse_cpu_list(text)
+    if cpu not in siblings:
+        raise GuardError(
+            f"SMT topology for CPU {cpu} does not include the target CPU: "
+            f"{format_cpu_list(siblings)}"
+        )
+    return siblings
 
 
 def primary_sibling(cpu: int) -> int | None:
@@ -363,8 +372,10 @@ def scan_candidates(
         if not math.isfinite(value) or not 0 <= value <= 100:
             raise GuardError(f"{name} must be a finite percentage in [0, 100]")
     sample_cpus = set(target_cpus)
+    siblings_by_cpu: dict[int, int | None] = {}
     for cpu in target_cpus:
         sibling = primary_sibling(cpu)
+        siblings_by_cpu[cpu] = sibling
         if sibling is not None:
             sample_cpus.add(sibling)
     observed: dict[int, list[CpuSample]] = {cpu: [] for cpu in sample_cpus}
@@ -379,16 +390,20 @@ def scan_candidates(
         raise GuardError("scan collected zero CPU samples; refusing to report OK")
 
     candidates: list[CleanCandidate] = []
+    incomplete_target_telemetry = 0
+    incomplete_sibling_telemetry = 0
     for cpu in sorted(target_cpus):
         cpu_samples = observed.get(cpu, [])
-        if not cpu_samples:
+        if len(cpu_samples) != interval_count:
+            incomplete_target_telemetry += 1
             continue
-        sibling = primary_sibling(cpu)
+        sibling = siblings_by_cpu[cpu]
         cpu_max = max(sample.busy_pct for sample in cpu_samples)
         sibling_max: float | None = None
         if sibling is not None:
             sibling_samples = observed.get(sibling, [])
-            if not sibling_samples:
+            if len(sibling_samples) != interval_count:
+                incomplete_sibling_telemetry += 1
                 continue
             sibling_max = max(sample.busy_pct for sample in sibling_samples)
         freq_values = [sample.freq_mhz for sample in cpu_samples if sample.freq_mhz is not None]
@@ -410,6 +425,8 @@ def scan_candidates(
         "intervals": interval_count,
         "busy_threshold_pct": busy_threshold_pct,
         "sibling_threshold_pct": sibling_threshold_pct,
+        "incomplete_target_telemetry": incomplete_target_telemetry,
+        "incomplete_sibling_telemetry": incomplete_sibling_telemetry,
         "clean_candidates": len(candidates),
     }
     return candidates, summary
