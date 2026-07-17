@@ -21,6 +21,7 @@ triggers:
 
 - aticket 负责 goal、owner、handoff、生命周期、最终结论和证据入口。
 - ticket-local 数据面负责 run、metric、variant、compiler、CPU、噪声标记和可查询字段。
+- 同一个 hypothesis/environment 的 variant 或参数组合属于同一 experiment ticket；run id/variant 是数据面字段，不是另开/另 fork ticket 的理由。
 - 原始 CSV/JSON/log/summary 仍是审计证据；Aim repo 不能成为唯一事实源。
 - 多 agent 并发时，默认各写各的 ticket workspace，不直接并发写中央 Aim repo。
 - 数据确认干净后，再把已验证 run 汇总到中央 TSU / 项目级 Aim repo。

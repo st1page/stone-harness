@@ -2,7 +2,7 @@
 
 `stone-harness` 需要和 [`aticket-cli`](https://github.com/st1page/aticket-cli) 配合使用：本仓库提供 agent 控制面示例基座，`aticket-cli` 提供 ticket / workspace 生命周期命令。
 
-新项目的 agent 工作基座。仓库自包含，**唯一外部依赖是 [`aticket-cli`](https://github.com/st1page/aticket-cli) 的 `aticket-cli` 命令**（用于工作单元归属、claim/release、fork、archive、状态外部化等）。
+新项目的 agent 工作基座。仓库自包含，**唯一需要另行安装的外部依赖是 [`aticket-cli`](https://github.com/st1page/aticket-cli) 的 `aticket-cli` 命令**（用于工作单元归属、claim/release、fork、archive、状态外部化等）。性能实验使用的 `perf-run-guard` 已随仓库放在 `tools/perf-run-guard/`。
 
 本仓库只保留控制面知识：描述「agent 怎么做事」的协作规范、工作流、原则。
 
@@ -15,6 +15,8 @@ sts-harness/
 │   ├── work-must-belong-to-a-ticket.md
 │   ├── code-work-preflight.md
 │   └── ...
+├── tools/
+│   └── perf-run-guard/         # Linux 单核性能实验保护工具
 ├── AGENTS.md                   # 入口（Claude Code 通过 CLAUDE.md 内联）
 └── CLAUDE.md                   # @AGENTS.md import
 ```
@@ -26,4 +28,5 @@ sts-harness/
 ## 外部依赖
 
 - **`aticket-cli`**：所有 substantive work 必须归属到一个 ticket（见 `principles/work-must-belong-to-a-ticket.md`）。安装后 `which aticket-cli` 应返回有效路径。
+- **`perf-run-guard` 已内置**：脚本位于 [`tools/perf-run-guard/perf_run_guard.py`](tools/perf-run-guard/perf_run_guard.py)，只依赖 Linux `/proc`、`/sys` 和 Python 3.12 标准库，不需要安装额外包或 clone 其他仓库。
 - **不依赖任何其他工作仓库**：sts-harness 在新机器上单独 clone 即可使用，不需要预先准备其他知识库或脚本仓库。

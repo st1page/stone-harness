@@ -1,11 +1,11 @@
 ---
-description: "同一领域的连续讨论不等于同一个 ticket；新 repo、PR、外部文档族、benchmark 环境、外部运行态或 source repo 切换必须触发 ticket 边界检查并按 handoff unit 拆分"
+description: "同一领域的连续讨论不等于同一个 ticket；边界变化必须检查 handoff unit，同一 goal/branch 的实现到 PR 默认复用，只有 owner、workspace、PR 线或交付物独立时才拆分"
 triggers:
   - "workstream boundary"
   - "handoff unit"
   - "new repo"
   - "new PR"
-  - "new external docs family"
+  - "new documentation page family"
   - "benchmark workstream"
   - "external runtime state"
   - "source repo switch"
@@ -20,13 +20,28 @@ triggers:
   - "fork ticket"
 ---
 
-# 工作流边界必须拆分 Ticket
+# 工作流边界必须判断，独立 Handoff 才拆 Ticket
 
-Ticket 的边界是 **handoff unit**，不是主题关键词。即使仍在同一个大讨论 / 大 ticket 下，只要交付物、owner、外部状态或恢复入口不同，就拆成新 ticket 或 fork ticket。
+Ticket 的边界是 **handoff unit**，不是主题关键词或阶段名称。只有 child 能以独立 owner / responsibility、workspace、PR 线或交付物单独恢复和验收时才拆；当前 ticket 的阶段、外部状态、链接或 next action 发生变化，只更新当前 ticket，不自动形成 child。只要仍是同一 goal、branch、owner、workspace 和验收，从实现进入验证、push、PR 创建或 review-finding 修复都继续当前 ticket。
+
+## 默认复用：连续对话不是 child ticket
+
+先假定复用当前 ACTIVE ticket。用户的下一句追问、概念解释的下一层、同一 repo/commit/environment 中多跑一个参数、或同一结论的补充证据，都只是当前 handoff unit 的新 log/context/artifact，不是新的 ticket。
+
+只有 child 能独立交接和验收时才拆，例如：新 repo 或独立 PR 线、独立 reviewer scope、不同 benchmark environment / 外部运行态、独立 owner，或可单独交付的文档/结果。为当前实现分支首次创建 PR、更新该 PR 或处理其 review finding，默认仍属于当前 ticket。fork 前必须先判断这个区别；边界不直观、需要审计依据，或 source 本身还是短 fork 时，用单行 `--boundary-reason` 写清：
+
+```bash
+aticket-cli ticket "$TICKET_DIR" fork \
+  --topic "<derived-workstream>" \
+  --goal "<fork ticket 要完成什么>" \
+  --boundary-reason "<why this is an independent handoff unit rather than a source-ticket continuation>"
+```
+
+`--boundary-reason` 是边界判断的审计记录，不是每个合法 fork 都要填写的通行表单。普通独立 fork 可以省略；source 本身是刚创建、只有少量 work log 的短 fork 时，CLI 会在创建 child 前要求它，并提示优先改 source 的 goal/context/log。提供理由时不能用“follow-up”“continue”“user asked next question”这类同义词绕过判断，仍须对应可独立恢复的 owner、workspace、外部状态或 deliverable。
 
 ## 核心判断
 
-问一句：如果现在 context 丢失，后续 agent 是否应该从同一个 `TICKET.md`、同一个 `workspace/`、同一组外部链接和同一个 next action 恢复？如果答案是否定的，就拆。
+问一句：这个 child 是否能脱离 source，以独立 owner / responsibility、workspace、PR 线或交付物单独恢复并验收？如果不能，就继续当前 ticket，并更新它的链接、外部状态和 next action；不要因为这些状态自然推进而拆票。
 
 边界检查的输出必须同时回答：
 
@@ -40,8 +55,8 @@ Ticket 的边界是 **handoff unit**，不是主题关键词。即使仍在同�
 遇到以下任一事件，先运行 `aticket-cli ticket "$TICKET_DIR" brief`，再写一条边界决策到当前 ticket：
 
 - 新 repo 或 repo workstream。
-- 新 PR / PR 线，或 PR merged / declined 后走另一个方向。
-- 新外部文档族 / 外部文档线。
+- 新的独立 PR 线，或 PR merged / declined 后走另一个方向；同一实现分支首次创建 / 更新 PR 只记录“不拆”的边界决定。
+- 新文档页面族 / 外部文档线。
 - 新 benchmark / 实验环境 / 远端运行态。
 - source repo / ownership 切换。
 - 目标从实现切到研究，或从研究切到产品化。
@@ -65,7 +80,7 @@ aticket-cli ticket "$TICKET_DIR" log \
 
 ### 新建独立 ticket
 
-适用于新 repo、新 PR 线、新 benchmark 环境、新外部文档线：
+适用于新 repo、独立 PR 线、新 benchmark 环境、新外部文档线：
 
 ```bash
 FOLLOWUP_DIR=$(aticket-cli ticket new \
@@ -80,32 +95,44 @@ aticket-cli ticket "$FOLLOWUP_DIR" add-item "file://$TICKET_DIR"
 
 ### Fork 派生 ticket
 
-适用于需要继承父 ticket 快照、`Must remember` 和上下文的研究 / monitor / publish / cleanup，也适用于同一个大 ticket 下的不同 branch / PR / benchmark / docs 分支任务：
+适用于需要继承父 ticket 快照、`Must remember` 和上下文的独立 research / monitor / publication line / cleanup，也适用于同一个大 ticket 下不同且可独立交接的 branch / PR line / benchmark / docs 分支任务；同一 branch 的首次 PR、PR 更新和 review-finding 修复不属于这里：
 
 同一个 parent ticket 可以代表 human-level intent / coordination thread；child/fork ticket 代表某个 branch-specific handoff unit。
 
 ```bash
 FORK_DIR=$(aticket-cli ticket "$TICKET_DIR" fork \
   --topic "<derived-workstream>" \
-  --goal "<fork ticket 要完成什么>")
+  --goal "<fork ticket 要完成什么>" \
+  --boundary-reason "<why this child has an independent handoff / owner / environment / deliverable>")
 aticket-cli ticket "$FORK_DIR" context \
   "Forked because <boundary>. First action: <next step>. Parent remains <active/archive/release decision>."
 aticket-cli ticket "$TICKET_DIR" add-item "file://$FORK_DIR"
 aticket-cli ticket "$FORK_DIR" add-item "file://$TICKET_DIR"
 ```
 
-`fork` 后必须在对话里确认 source / forked ticket、fork goal，以及后续是否切到 forked ticket 推进。不立即切到 child 时，写清 child context 和双向链接后 `release` 成 BACKLOG。切到 child 后，repo 写操作必须先在 child ticket 的 `workspace/` 下创建或验证 linked worktree；不要让 parent 和 child 共用 checkout、branch 或 uncommitted worktree state。
+`fork` 后在对话里报告 source / forked ticket、fork goal 和已确定的下一步，并依照边界判断继续推进。旧票归属在 discover 阶段仍未确定时，再向 human 询问。暂不切到 child 时，写清 child context 和双向链接后 `release` 成 BACKLOG。切到 child 后，repo 写操作必须先在 child ticket 的 `workspace/` 下创建或验证 linked worktree；parent 与 child 使用各自的 checkout、branch 和未提交工作状态。
 
 ### Parent ticket 收口
 
 拆出 child 后，source ticket 不能无限作为 active index：
 
-- 如果 source goal 已完成：写 final `short-context`，archive。
+- 如果 source goal 已完成且交付 disposition 已终结或由 child 明确接管：写 final `short-context`，archive；保留代码但无 PR、无 child owner 不是完成。
 - 如果 source 还负责协调：保留 ACTIVE，但 `short-context` 必须写清它仍负责什么、child ticket 负责什么，以及 next coordination action。
 - 如果 source 只剩纯索引功能，且没有 owner 要推进的下一步：archive source，让 child ticket 作为继续入口。
 - 如果 source 仍在协调多个 branch-specific child/fork ticket，可以继续保持 ACTIVE；但每个 child 应该有自己的 owner、workspace、first action 和 recovery context。
 
 长票 parent 收口前应优先写一个 `final-rollup` / `index` artifact：列出最终 PR / 页面 / benchmark / follow-up child ticket 的入口，说明哪些历史实验已经被 supersede。后续 agent 应该先读 rollup，而不是从数百行 item / log 里恢复状态。
+
+## 防碎片回归场景
+
+规则或 CLI 变更后至少检查以下场景：
+
+1. 同一解释会话连续 10 个追问：只创建 1 个 ticket；每一轮更新 log/context，最后统一 archive。
+2. 同一 hypothesis、同一 commit/机器/数据的 `-n 4`、`-n 8`、`-n 16` 参数比较：只创建 1 个 experiment ticket；每个 run 用独立 artifact/run id。
+3. 同一设计的 semantic、API/compiler、runtime 三个独立 reviewer：允许 3 个 child tickets；每个都有不同 review scope、findings artifact 和验收决定，并能说明各自的 handoff boundary（需要留痕或触发短链 guard 时写入 `--boundary-reason`）。
+4. 同一 repo / goal / branch 从实现、验证到首次 push / PR：只使用 1 个 implementation ticket；PR URL 回链当前 ticket，不额外创建 publication ticket。
+
+前两个和第四个场景出现连续 fork 即为回归；第三个场景被强行塞进一张 ticket 也是回归。
 
 ## 相关原则
 

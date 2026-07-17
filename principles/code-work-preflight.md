@@ -51,6 +51,12 @@ triggers:
 2. **Worktree**：目标 repo 从 `/home/tsshi/<repo>` 这类日常 `master` checkout 创建或复用当前 ticket `workspace/` 下的 linked worktree；第一次编辑前按 [write-ops-must-verify-linked-worktree-before-first-edit](write-ops-must-verify-linked-worktree-before-first-edit.md) 验证 `git-dir` / `common-dir` / `pwd` / branch
 3. **Publish**：有 remote 的 repo 只 push topic branch 并通过 PR 合入 `master`；创建 PR 或其他外部发布物前，按 [published-content-must-identify-ticket](published-content-must-identify-ticket.md) 在正文里标注当前 ticket
 
+普通的实现 / 修复 / 修改目标，在 repo 有可用 remote 时默认包含推送 topic branch 和创建 PR；agent 不应把“human 没有单独要求 push / PR”解释成只做本地 commit。同一 goal / branch 的实现、验证、push 和 PR 创建通常仍是一个 handoff unit，继续当前 ticket；只有 human 肯定说明本地产物就是最终交付且以后不再 push / 发 PR、repo 无可用 remote、变更已丢弃或 supersede、或明确选择 patch / artifact 等替代交付时，才可以无 PR 收口，并把依据和可恢复入口写入 ticket。
+
+human 明确要求“暂停 / 先到这里 / 暂时不要继续 / 先别 push”时，这个最新意图覆盖默认发布动作：不要继续 push / 创建或更新 PR，先记录 branch / commit、未完成的 delivery state 和恢复后的 first action，再保持 ACTIVE 或 release 成 BACKLOG。否定当前发布动作不等于肯定本地交付是最终终点；除非 human 进一步明确以后也不再 push / 发 PR，否则不能因此 archive。
+
+PR 创建不等于 PR 已合并。PR 仍 OPEN 且当前 agent 负责 review / fix / merge 时保持 ticket ACTIVE；明确交给 human / reviewer 时 release 成 BACKLOG 并写清 owner 和 first action。只有 PR 已 MERGED / DECLINED / SUPERSEDED，或 ticket 的明确验收目标只是完成 PR publication 且交接已经成立，才把代码交付作为终态收口。
+
 human 明确要求直推远端 `master` 时才允许例外；执行前必须在对话中复述目标 repo、remote、source ref、target ref 和 commit 范围，并把例外记录到 ticket。
 
 新建公开 repo 前先按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 判断是否需要新 ticket / fork ticket。新 repo 的首个可写分支默认直接使用 `master`；如果确实必须先用 bootstrap/topic branch，必须在同一 session 内补齐真实 `master`、`origin/master`、default branch 和健康 root checkout。bootstrap session 结束前至少确认 `master` / `origin/master` 存在、`master...origin/master` 为 `0 0`、root status 干净且 `git ls-files` 非零；不要把这一步降级成 optional follow-up。

@@ -71,7 +71,8 @@ aticket-cli ticket "$FOLLOWUP_DIR" add-item "file://$TICKET_DIR"
 ```bash
 FORKED_TICKET_DIR=$(aticket-cli ticket "$SOURCE_TICKET_DIR" fork \
   --topic "monitor-jp10-backfill" \
-  --goal "Monitor jp10 backfill after PR-123 merge")
+  --goal "Monitor jp10 backfill after PR-123 merge" \
+  --boundary-reason "Post-merge monitoring has a separate owner, acceptance condition, and handoff")
 aticket-cli ticket "$FORKED_TICKET_DIR" context \
   "Start from artifacts/source-ticket-snapshot.md; first check backfill job state."
 aticket-cli ticket "$SOURCE_TICKET_DIR" add-item "file://$FORKED_TICKET_DIR"
@@ -83,7 +84,7 @@ fork 默认创建 ACTIVE child ticket。deferred follow-up 不是当前 agent �
 
 forked ticket 有自己的 lease。它可以读 source ticket 和 source artifacts/state，但拿到的是 fork 时刻的 source snapshot；source 不会自动回写，也不会自动 archive。
 
-派生目的写进 `--goal` / `short-context` / `log`；source 是否需要额外补充决策日志，由 source owner 显式决定。`fork` / `release` 后仍要按 [work-must-belong-to-a-ticket](work-must-belong-to-a-ticket.md) 在对话里向 human 确认 ticket 路径、lifecycle 和 handoff 语义。
+派生目的写进 `--goal` / `short-context` / `log`；source 是否需要额外补充决策日志，由 source owner 显式决定。`fork` / `release` 后，按 [work-must-belong-to-a-ticket](work-must-belong-to-a-ticket.md) 在对话里陈述 ticket 路径、lifecycle 和 handoff 语义，并执行已经确定的下一步。旧 ticket 的归属在 discover 阶段仍未确定时，再向 human 询问。
 
 ## 后续票被完成或废弃时
 
@@ -101,7 +102,7 @@ forked ticket 有自己的 lease。它可以读 source ticket 和 source artifac
 ## 相关原则
 
 - [work-must-belong-to-a-ticket](work-must-belong-to-a-ticket.md) — 每次工作必须归属到一个 ticket
-- [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) — 新 repo / PR / 外部文档族 / benchmark / source repo 切换等独立 handoff unit 必须拆票并双向链接
+- [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) — 新 repo / PR / 页面族 / benchmark / source repo 切换等独立 handoff unit 必须拆票并双向链接
 - [ticket-lifecycle-boundary-check](ticket-lifecycle-boundary-check.md) — 边界动作后判断 source / child ticket 应 ACTIVE、release/BACKLOG 还是 archive
 - [persistent-state-must-be-externalized](persistent-state-must-be-externalized.md) — 持久化状态必须外部化到 ticket 目录
 

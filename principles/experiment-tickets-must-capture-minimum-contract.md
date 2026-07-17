@@ -64,11 +64,12 @@ aticket-cli ticket "$TICKET_DIR" context \
 
 ## 边界
 
+- **同一 hypothesis + 同一环境 + 参数 sweep = 一张 experiment ticket**。例如同一 commit/机器/数据上的 `-n 4`、`-n 8`、`-n 16` 比较，应以 run id 区分 artifact，而不是每个参数 fork/new 一张 ticket。只有机器、runtime、数据、benchmark target 或独立 owner/交接单位变化时，才做 workstream boundary check。
 - 小 smoke 也要有 pass/fail、命令和环境；可以只写一条 log。
 - 大实验不要把所有 raw 数据塞进 `TICKET.md`；把文件放进带 run/version 语义的 `artifacts/` 路径，ticket 里写摘要并用 `add-item` 登记入口。
 - 不要为了“更新结果”覆盖已登记的 artifact；新结果用新路径，旧结果保留为审计证据。
 - 如果结果会被正式发布，发布材料还必须固定到可追溯的 source commit，并引用 commit sha/title、执行命令和 artifacts 入口；只有当结论声称代表主线 / release / 线上默认状态时，才需要在对应 `master` / release commit 上复核。
-- 如果实验切到新的机器 / runtime / 数据环境 / benchmark 目标，或从附带 smoke 变成独立研究线，先按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 判断是否需要新 ticket / fork ticket。不要把长期 benchmark 线附着在原实现 ticket 下，尤其是结果会驱动 PR、文档页面或后续优化时。
+- 如果实验切到新的机器 / runtime / 数据环境 / benchmark 目标，或从附带 smoke 变成独立研究线，先按 [workstream-boundaries-must-split-ticket](workstream-boundaries-must-split-ticket.md) 判断是否需要新 ticket / fork ticket。不要把长期 benchmark 线附着在原实现 ticket 下，尤其是结果会驱动 PR、文档报告或后续优化时。
 
 ## 相关原则
 
